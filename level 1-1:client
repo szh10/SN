@@ -1,0 +1,52 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+
+#define BUFFER_SIZE 1024
+class Client {
+public:
+    Client(const char *server_ip, int port, int protocol);
+    ~Client();
+    int send_data(const char *data);
+    int receive_data(char *buffer, int buffer_len);
+private:
+    int sockfd;
+};
+Client::Client(const char *server_ip, int port, int protocol) {
+    // create socket
+    sockfd = socket(AF_INET, protocol, 0);
+    if (sockfd < 0) {
+        perror("socket creation failed");
+        exit(EXIT_FAILURE);
+    }
+    // set server address
+    struct sockaddr_in server_addr;
+    memset(&server_addr, 0, sizeof(server_addr));
+    server_addr.sin_family = AF_INET;
+    server_addr.sin_port = htons(port);
+    if (inet_pton(AF_INET, server_ip, &server_addr.sin_addr) <= 0) {
+        perror("inet_pton failed");
+        exit(EXIT_FAILURE);
+    }
+
+    // connect to server
+    if (connect(sockfd, (struct sockaddr *)&server_addr, sizeof(server_addr)) < 0) {
+        perror("connect failed");
+        exit(EXIT_FAILURE);
+    }
+}
+
+Client::~Client() {
+    close(sockfd);
+}
+
+int Client::send_data(const char *data) {
+    return send(sockfd, data, strlen(data), 0);
+}
+
+int Client::receive_data(char *buffer, int buffer_len) {
+    return recv(sockfd, buffer, buffer_len, 0);
+}
