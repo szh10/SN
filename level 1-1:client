@@ -6,22 +6,19 @@
 #include <arpa/inet.h>
 
 #define BUFFER_SIZE 1024
-class Client {
-public:
-    Client(const char *server_ip, int port, int protocol);
-    ~Client();
-    int send_data(const char *data);
-    int receive_data(char *buffer, int buffer_len);
-private:
+
+struct Client {
     int sockfd;
 };
-Client::Client(const char *server_ip, int port, int protocol) {
+
+void init_client(struct Client *client, const char *server_ip, int port, int protocol) {
     // create socket
-    sockfd = socket(AF_INET, protocol, 0);
-    if (sockfd < 0) {
+    client->sockfd = socket(AF_INET, protocol, 0);
+    if (client->sockfd < 0) {
         perror("socket creation failed");
         exit(EXIT_FAILURE);
     }
+
     // set server address
     struct sockaddr_in server_addr;
     memset(&server_addr, 0, sizeof(server_addr));
@@ -33,20 +30,20 @@ Client::Client(const char *server_ip, int port, int protocol) {
     }
 
     // connect to server
-    if (connect(sockfd, (struct sockaddr *)&server_addr, sizeof(server_addr)) < 0) {
+    if (connect(client->sockfd, (struct sockaddr *)&server_addr, sizeof(server_addr)) < 0) {
         perror("connect failed");
         exit(EXIT_FAILURE);
     }
 }
 
-Client::~Client() {
-    close(sockfd);
+void destroy_client(struct Client *client) {
+    close(client->sockfd);
 }
 
-int Client::send_data(const char *data) {
-    return send(sockfd, data, strlen(data), 0);
+int send_data(struct Client *client, const char *data) {
+    return send(client->sockfd, data, strlen(data), 0);
 }
 
-int Client::receive_data(char *buffer, int buffer_len) {
-    return recv(sockfd, buffer, buffer_len, 0);
+int receive_data(struct Client *client, char *buffer, int buffer_len) {
+    return recv(client->sockfd, buffer, buffer_len, 0);
 }
