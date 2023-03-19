@@ -1,0 +1,50 @@
+//定义请求记录结构体
+typedef struct request_record {
+    char *request_body; //请求体
+    int cseq; //cseq
+    char *response_content; //响应内容
+    struct request_record *next; //指向下一个请求记录
+} request_record;
+
+//定义函数，用于打印请求记录
+void print_session_records(request_record *head) {
+    request_record *curr = head;
+    while (curr != NULL) {
+        printf("Request body: %s\n", curr->request_body);
+        printf("Cseq: %d\n", curr->cseq);
+        printf("Response content: %s\n", curr->response_content);
+        curr = curr->next;
+    }
+}
+
+//定义函数，用于添加请求记录
+void add_request_record(request_record **head, char *request_body, int cseq, char *response_content) {
+    request_record *new_record = malloc(sizeof(request_record));
+    new_record->request_body = request_body;
+    new_record->cseq = cseq;
+    new_record->response_content = response_content;
+    new_record->next = NULL;
+
+    if (*head == NULL) {
+        *head = new_record;
+    } else {
+        request_record *curr = *head;
+        while (curr->next != NULL) {
+            curr = curr->next;
+        }
+        curr->next = new_record;
+    }
+}
+
+//定义函数，用于删除所有请求记录
+void delete_all_request_records(request_record **head) {
+    request_record *curr = *head;
+    while (curr != NULL) {
+        request_record *next = curr->next;
+        free(curr->request_body);
+        free(curr->response_content);
+        free(curr);
+        curr = next;
+    }
+    *head = NULL;
+}
