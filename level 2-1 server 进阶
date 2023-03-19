@@ -1,0 +1,206 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+#include <errno.h>
+#include <sys/socket.h>
+#include <arpa/inet.h>
+#include <pthread.h>
+
+#define MAX_CLIENTS 10
+
+struct session {
+    int session_id;
+    int sockfd;
+};
+
+struct session *sessions[MAX_CLIENTS];
+int session_id = 0;
+
+void *handle_client(void *arg) {
+    int connfd = *((int *)arg);
+    free(arg);
+
+    // 获取session id
+    char session[256];
+    if (recv(connfd, session, 256, 0) == -1) {
+        perror("recv error");
+        close(connfd);
+        return NULL;
+    }
+
+    // 查找对应的session
+    struct session *sess = NULL;
+    int i;
+    for (i = 0; i < MAX_CLIENTS; i++) {
+        if (sessions[i] != NULL && sessions[i]->session_id == atoi(session)) {
+            sess = sessions[i];
+            break;
+        }
+    }
+
+    // 处理客户端请求
+    char buf[256];
+    int n;
+    while ((n = recv(connfd, buf, 256, 0)) > 0) {
+        buf[n] = '\0';
+        printf("recv: %s", buf);
+
+        // 解析请求类型
+        char type[16];
+        sscanf(buf, "%s", type);
+
+        // 处理SETUP请求
+        if (strcmp(type, "SETUP") == 0) {
+            // ...
+        }
+        // 处理PLAY请求
+        else if (strcmp(type, "PLAY") == 0) {
+            // ...
+        }
+        // 处理PAUSE请求
+        else if (strcmp(type, "PAUSE") == 0) {
+            // ...
+        }
+        // 处理TEARDOWN请求
+        else if (strcmp(type, "TEARDOWN") == 0) {
+            // ...
+        }
+        // 处理不支持的请求
+        else {
+            char response[256];
+            sprintf(response, "RTSP/1.0 405 Method Not Allowed\r\nCSeq: %d\r\nSession: %s\r\n\r\n", 0, session);
+            send(connfd, response, strlen(response), 0);
+        }
+    }
+
+    // 关闭客户端连接
+    close(connfd);
+
+    // 清理session
+    if (sess != NULL) {
+        sessions[i] = NULL;
+        free(sess);
+    }
+
+    return NULL;
+}
+
+int main(int argc, char *argv[]) {
+    int server_fd;
+    struct sockaddr_in address;
+    int opt = 1;
+    int addrlen = sizeof(address);
+
+    // 创建socket
+    if ((server_fd = socket(AF_INET, SOCK_STREAM, 0)) == -1) {
+        perror("socket creation error");
+        exit(EXIT_FAILURE);
+    }
+
+    // 设置socket选项
+    if (setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR | SO_REUSEPORT, &opt, sizeof(opt)) == -1) {
+        perror("setsockopt error");
+        exit(EXIT_FAILURE);
+    }
+
+    // 设置地址结构
+    address.sin_family = AF_INET;
+    address.sin_addr.s_addr = INADDR_ANY;
+    address.sin_port = htons(8080);
+
+    // 绑定socket
+    if (bind(server_fd, (struct sockaddr *)&address, sizeof(address)) < 0) {
+perror("bind error");
+exit(EXIT_FAILURE);
+}
+// 监听socket
+if (listen(server_fd, 10) == -1) {
+    perror("listen error");
+    exit(EXIT_FAILURE);
+}
+
+// 设置文件描述符集合
+fd_set read_fds;
+FD_ZERO(&read_fds);
+FD_SET(server_fd, &read_fds);
+int max_fd = server_fd;
+
+// 循环接收客户端请求
+while (1) {
+    // 复制文件描述符集合，因为select会改变文件描述符集合
+    fd_set tmp_fds = read_fds;
+    int num_ready = select(max_fd + 1, &tmp_fds, NULL, NULL, NULL);
+    if (num_ready == -1) {
+        perror("select error");
+        exit(EXIT_FAILURE);
+    }
+
+    // 判断是否有新的连接请求
+    if (FD_ISSET(server_fd, &tmp_fds)) {
+        int new_socket = accept(server_fd, (struct sockaddr *)&address, (socklen_t *)&addrlen);
+        if (new_socket < 0) {
+            perror("accept error");
+            exit(EXIT_FAILURE);
+        }
+        printf("New connection from %s:%d\n", inet_ntoa(address.sin_addr), ntohs(address.sin_port));
+
+        // 将新的socket添加到文件描述符集合中
+        FD_SET(new_socket, &read_fds);
+        if (new_socket > max_fd) {
+            max_fd = new_socket;
+        }
+
+        // 创建一个新的客户端信息结构体
+        struct client_info *client = (struct client_info *)malloc(sizeof(struct client_info));
+        client->sockfd = new_socket;
+        memset(client->session_id, 0, MAX_SESSION_ID);
+        client->cseq = 0;
+        clients[new_socket] = client;
+    }
+
+    // 处理已经连接的客户端请求
+    for (int i = 0; i <= max_fd; i++) {
+        if (FD_ISSET(i, &tmp_fds)) {
+            if (i == server_fd) {
+                continue;
+            }
+            struct client_info *client = clients[i];
+            int sockfd = client->sockfd;
+
+            // 读取客户端请求报文
+            char buffer[MAX_BUFFER_SIZE];
+            memset(buffer, 0, MAX_BUFFER_SIZE);
+            int valread = read(sockfd, buffer, MAX_BUFFER_SIZE);
+            if (valread <= 0) {
+                // 客户端关闭了连接
+                printf("Client %d disconnected\n", sockfd);
+                FD_CLR(sockfd, &read_fds);
+                close(sockfd);
+                free(client);
+                clients[i] = NULL;
+            } else {
+                // 解析客户端请求
+                int ret = parse_request(buffer, client);
+                if (ret == -1) {
+                    // 解析请求失败
+                    printf("Error parsing request from client %d\n", sockfd);
+                } else {
+                    // 处理客户端请求，并生成响应报文
+                    char response[MAX_BUFFER_SIZE];
+                    memset(response, 0, MAX_BUFFER_SIZE);
+                    handle_request(client, response);
+
+                    // 发送响应报文给客户端
+                    int sent = send(sockfd, response, strlen(response), 0);
+                    if (sent == -1) {
+                        printf("Error sending response to client %d\n", sockfd);
+                    }
+                }
+            }
+        }
+    }
+}
+
+return 0;
+}
