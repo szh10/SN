@@ -1,0 +1,52 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+
+#define BUFFER_SIZE 1024
+
+char* create_request(char* method, char* url, char* version, int cseq, char* body) {
+    char* request = (char*)malloc(BUFFER_SIZE);
+    sprintf(request, "%s %s %s\r\nCSeq: %d\r\n", method, url, version, cseq);
+    if (body != NULL) {
+        strcat(request, body);
+        strcat(request, "\r\n");
+    }
+    strcat(request, "\r\n");
+    return request;
+}
+
+int main(int argc, char** argv) {
+    int sockfd;
+    struct sockaddr_in servaddr;
+
+    if (argc != 2) {
+        printf("Usage: %s <IPaddress>\n", argv[0]);
+        exit(1);
+    }
+
+    sockfd = socket(AF_INET, SOCK_STREAM, 0);
+
+    bzero(&servaddr, sizeof(servaddr));
+    servaddr.sin_family = AF_INET;
+    servaddr.sin_port = htons(554);
+    if (inet_pton(AF_INET, argv[1], &servaddr.sin_addr) <= 0) {
+        printf("inet_pton error for %s\n", argv[1]);
+        exit(1);
+    }
+
+    if (connect(sockfd, (struct sockaddr*)&servaddr, sizeof(servaddr)) < 0) {
+        printf("connect error\n");
+        exit(1);
+    }
+
+    char* request = create_request("OPTIONS", "diantp://192.168.0.1:554", "0.5", 1, NULL);
+    send(sockfd, request, strlen(request), 0);
+    printf("Sent request:\n%s", request);
+
+    free(request);
+    close(sockfd);
+    return 0;
+}
