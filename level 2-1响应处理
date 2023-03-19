@@ -1,0 +1,172 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <arpa/inet.h>
+
+#define MAXLINE 1024
+#define SERV_PORT 8000
+#define SA struct sockaddr
+
+// 存储session_id的数据结构
+struct session {
+    int session_id;
+    int sockfd;
+};
+
+int main(void)
+{
+    int listenfd, connfd;
+    struct sockaddr_in servaddr, cliaddr;
+    socklen_t clilen;
+    char buf[MAXLINE];
+    char cmd[MAXLINE], url[MAXLINE], version[MAXLINE];
+    int cseq, session_id = 0;
+    struct session *sess = NULL;
+    int n, i, port;
+    char sendline[MAXLINE];
+
+    // 创建监听socket
+    listenfd = socket(AF_INET, SOCK_STREAM, 0);
+
+    // 初始化服务器地址结构体
+    bzero(&servaddr, sizeof(servaddr));
+    servaddr.sin_family = AF_INET;
+    servaddr.sin_addr.s_addr = htonl(INADDR_ANY);
+    servaddr.sin_port = htons(SERV_PORT);
+
+    // 绑定监听socket到本地地址和端口号
+    bind(listenfd, (SA *)&servaddr, sizeof(servaddr));
+
+    // 开始监听
+    listen(listenfd, 5);
+
+    printf("Server running...waiting for connections.\n");
+
+    while(1) {
+        clilen = sizeof(cliaddr);
+
+        // 接收客户端连接
+        connfd = accept(listenfd, (SA *)&cliaddr, &clilen);
+
+        printf("Received request from %s at PORT %d\n",
+                inet_ntop(AF_INET, &cliaddr.sin_addr, buf, sizeof(buf)),
+                ntohs(cliaddr.sin_port));
+
+        // 读取客户端请求报文
+        n = read(connfd, buf, MAXLINE);
+
+        // 解析请求报文中的信息
+        sscanf(buf, "%s %s %s\r\nCSeq: %d\r\nSession: %d\r\n",
+                cmd, url, version, &cseq, &session_id);
+
+        printf("Request:\n");
+        printf("%s", buf);
+
+        // 根据请求类型生成响应报文并发送回客户端
+        if (strcmp(cmd, "OPTIONS") == 0) {
+            sprintf(sendline, "RTSP/1.0 200 OK\r\nCSeq: %d\r\nPublic: OPTIONS, SETUP, PLAY, PAUSE, TEARDOWN\r\n\r\n", cseq);
+            write(connfd, sendline, strlen(sendline));
+        } else if (strcmp(cmd, "SETUP") == 0) {
+            // 解析SETUP请求中的端口
+            port = atoi(strrchr(url, '/') + 1);
+
+            // 创建新的session
+            sess = (struct session *)malloc(sizeof(struct session));
+            sess->session_id = ++session_id;
+            sess->sockfd = connfd;
+
+            // 将session存储到全局变量中
+            // 这里使用一个简单的数组来存储所有的session
+            // 实际中，可能需要使用更复杂的数据结构来管理session
+            // 比如哈希表、二叉树等
+            sessions[session_id - 1] = sess;
+
+            // 为新的session生成响应报文 
+sprintf(response, "RTSP/1.0 200 OK\r\nCSeq: %d\r\nSession: %d\r\n", cseq, session_id); strcat(response, "\r\n");
+        // 发送响应报文到客户端
+        if (send(connfd, response, strlen(response), 0) == -1) {
+            perror("send error");
+        }
+    }
+    // 处理PLAY请求
+    else if (strcmp(method, "PLAY") == 0) {
+        // 获取session_id
+        int session_id = atoi(session);
+
+        // 检查session_id是否有效
+        if (sessions[session_id - 1] == NULL) {
+            sprintf(response, "RTSP/1.0 404 Not Found\r\nCSeq: %d\r\nSession: %d\r\n", cseq, session_id);
+            strcat(response, "\r\n");
+            send(connfd, response, strlen(response), 0);
+            continue;
+        }
+
+        // 获取session对应的socket
+        int sockfd = sessions[session_id - 1]->sockfd;
+
+        // 构造数据并发送
+        char buf[101];
+        memset(buf, 'a', 100);
+        buf[100] = '\0';
+
+        for (int i = 0; i < 10; i++) {
+            if (send(sockfd, buf, strlen(buf), 0) == -1) {
+                perror("send error");
+            }
+        }
+
+        // 构造响应报文
+        sprintf(response, "RTSP/1.0 200 OK\r\nCSeq: %d\r\nSession: %d\r\n", cseq, session_id);
+        strcat(response, "\r\n");
+
+        // 发送响应报文到客户端
+        if (send(connfd, response, strlen(response), 0) == -1) {
+            perror("send error");
+        }
+    }
+    // 处理TEARDOWN请求
+    else if (strcmp(method, "TEARDOWN") == 0) {
+        // 获取session_id
+        int session_id = atoi(session);
+
+        // 检查session_id是否有效
+        if (sessions[session_id - 1] == NULL) {
+            sprintf(response, "RTSP/1.0 404 Not Found\r\nCSeq: %d\r\nSession: %d\r\n", cseq, session_id);
+            strcat(response, "\r\n");
+            send(connfd, response, strlen(response), 0);
+            continue;
+        }
+
+        // 获取session对应的socket
+        int sockfd = sessions[session_id - 1]->sockfd;
+
+        // 关闭socket
+        close(sockfd);
+
+        // 释放session结构体占用的内存
+        free(sessions[session_id - 1]);
+
+        // 将session从全局变量中删除
+        sessions[session_id - 1] = NULL;
+
+        // 构造响应报文
+        sprintf(response, "RTSP/1.0 200 OK\r\nCSeq: %d\r\n", cseq);
+        strcat(response, "\r\n");
+
+        // 发送响应报文到客户端
+        if (send(connfd, response, strlen(response), 0) == -1) {
+            perror("send error");
+        }
+    }
+    // 处理不支持的请求
+    else {
+        sprintf(response, "RTSP/1.0 405 Method Not Allowed\r\nCSeq: %d\r\nSession: %s\r\n\r\n", cseq, session);
+
+    // 发送响应报文到客户端
+    if (send(connfd, response, strlen(response), 0) == -1) {
+        perror("send error");
+    }
+}
